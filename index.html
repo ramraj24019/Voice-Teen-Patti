@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teen Patti – Three Cards Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="game-container">
+    <h1>Teen Patti – Three Cards Game</h1>
+    
+    <div id="login-screen" class="active">
+      <h2>Join Game</h2>
+      <input type="text" id="player-name-input" placeholder="Enter your name">
+      <button id="join-game-btn">Join Game</button>
+      <p style="margin-top:15px; font-size: 0.9em;">You will start with ₹1000 or your last saved balance.</p>
+    </div>
+
+    <div id="waiting-room">
+      <h2 id="waiting-room-title">Waiting for Players...</h2>
+      <p>Your Balance: <span id="wait-room-balance"></span></p>
+      <div id="waiting-players-list"></div>
+    </div>
+
+    <div id="game-board">
+      <div id="players-area"></div>
+      <div id="pot-area">Pot: ₹0</div>
+      <div id="action-buttons">
+        <button id="btn-chaal">Chaal</button>
+        <button id="btn-see">See My Cards</button>
+        <button id="btn-pack">Pack (Fold)</button>
+        <button id="btn-show">Show</button>
+        <button id="btn-sideshow">Side Show</button>
+      </div>
+      <div id="game-log"></div>
+      <div id="admin-panel">
+        <h3 style="margin-top:0;">Admin Controls</h3>
+        <button id="btn-admin-see-all">See All Cards: OFF</button>
+        <button id="btn-admin-change-cards">Change My Cards</button>
+      </div>
+    </div>
+
+    <div id="bottom-controls">
+        <button id="game-control-btn"></button>
+        <button id="btn-voice-chat">Join Voice 🎤</button>
+    </div>
+  </div>
+
+  <!-- Firebase और Agora की लाइब्रेरी -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+
+  <!-- === FIX: Changed how game.js is loaded to prevent errors === -->
+  <script src="game.js"></script>
+</body>
+</html>
