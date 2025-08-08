@@ -3,57 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teen Patti – Three Cards Game</title>
+    <title>Teen Patti Pro</title>
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <div id="game-container">
-    <h1>Teen Patti – Three Cards Game</h1>
-    
-    <div id="login-screen" class="active">
-      <h2>Join Game</h2>
-      <input type="text" id="player-name-input" placeholder="Enter your name">
-      <button id="join-game-btn">Join Game</button>
-      <p style="margin-top:15px; font-size: 0.9em;">You will start with ₹1000 or your last saved balance.</p>
-    </div>
-
-    <div id="waiting-room">
-      <h2 id="waiting-room-title">Waiting for Players...</h2>
-      <p>Your Balance: <span id="wait-room-balance"></span></p>
-      <div id="waiting-players-list"></div>
-    </div>
-
-    <div id="game-board">
-      <div id="players-area"></div>
-      <div id="pot-area">Pot: ₹0</div>
-      <div id="action-buttons">
-        <button id="btn-chaal">Chaal</button>
-        <button id="btn-see">See My Cards</button>
-        <button id="btn-pack">Pack (Fold)</button>
-        <button id="btn-show">Show</button>
-        <button id="btn-sideshow">Side Show</button>
-      </div>
-      <div id="game-log"></div>
-      <div id="admin-panel">
-        <h3 style="margin-top:0;">Admin Controls</h3>
-        <button id="btn-admin-see-all">See All Cards: OFF</button>
-        <button id="btn-admin-change-cards">Change My Cards</button>
+    <!-- स्क्रीन: लॉग इन -->
+    <div id="login-screen" class="screen active">
+      <div class="login-box">
+        <h1>Teen Patti Pro</h1>
+        <input type="text" id="player-name-input" placeholder="Enter your name">
+        <button id="join-game-btn">Enter Game</button>
       </div>
     </div>
 
-    <div id="bottom-controls">
-        <button id="game-control-btn"></button>
-        <button id="btn-voice-chat">Join Voice 🎤</button>
+    <!-- स्क्रीन: गेम टेबल -->
+    <div id="game-table" class="screen">
+      <!-- ऊपर का बार -->
+      <div class="top-bar">
+        <div class="game-title">Teen Patti Pro</div>
+        <div id="live-player-count">Players: 0/4</div>
+      </div>
+      
+      <!-- खिलाड़ियों का एरिया -->
+      <div id="players-area">
+        <!-- JS द्वारा प्लेयर स्लॉट यहाँ डाले जाएँगे -->
+      </div>
+      
+      <!-- पॉट और गेम मैसेज -->
+      <div class="table-center">
+        <div id="pot-area">Pot: ₹0</div>
+        <div id="game-message">Waiting for players...</div>
+      </div>
+
+      <!-- एक्शन बटन -->
+      <div class="actions-and-chat">
+        <div id="action-buttons">
+          <button id="btn-pack">Pack</button>
+          <button id="btn-see">See</button>
+          <button id="btn-sideshow">SideShow</button>
+          <button id="btn-chaal">Chaal</button>
+          <button id="btn-show">Show</button>
+        </div>
+      </div>
+
+      <!-- चैट बॉक्स -->
+      <div id="chat-box">
+        <div id="chat-messages"></div>
+        <input type="text" id="chat-input" placeholder="Type a message...">
+      </div>
+
+       <!-- नीचे के कंट्रोल -->
+      <div class="bottom-controls">
+         <button id="btn-voice-chat">Voice 🎤</button>
+         <!-- एडमिन पैनल -->
+         <div id="admin-panel">
+            <button id="btn-admin-see-all">See All</button>
+            <button id="btn-admin-change-cards">Change</button>
+         </div>
+      </div>
     </div>
+
+    <!-- स्टिकर पॉपअप (छिपा हुआ) -->
+    <div id="sticker-popup"></div>
   </div>
 
-  <!-- Firebase और Agora की लाइब्रेरी -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <!-- लाइब्रेरी -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
-
-  <!-- === FIX: Changed how game.js is loaded to prevent errors === -->
+  <!-- गेम लॉजिक -->
   <script src="game.js"></script>
 </body>
 </html>
