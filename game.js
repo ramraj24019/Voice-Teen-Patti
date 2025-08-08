@@ -169,20 +169,30 @@ document.addEventListener('DOMContentLoaded', () => {
             slot.dataset.playerId = player.id;
             const isMe = player.id === localPlayerId;
             let cardsHTML = '';
+            
             if (player.cards) {
-                const showCards = adminSeeAll || (isMe && player.status === 'seen') || status === 'showdown';
-                cardsHTML = player.cards.map(cardStr => `
-                    <div class="card ${showCards ? 'flipped' : ''}">
-                        <div class="card-face card-back"></div>
-                        <div class="card-face card-front">${cardStr}</div>
-                    </div>`).join('');
+                const shouldShowMyCards = isMe && player.status === 'seen';
+                const isShowdown = status === 'showdown';
+                
+                cardsHTML = player.cards.map(cardStr => {
+                    let cardClass = 'card';
+                    if (shouldShowMyCards || adminSeeAll || (isShowdown && player.status !== 'packed')) {
+                        cardClass += ' seen showdown'; 
+                    }
+                    return `<div class="${cardClass}">
+                                <div class="card-face card-back"></div>
+                                <div class="card-face card-front">${cardStr}</div>
+                            </div>`;
+                }).join('');
             }
+            
             slot.innerHTML = `
                 <div class="player-avatar" style="background-image: url('${player.avatar}')"></div>
                 <div class="player-name">${player.name}${isMe ? ' (You)' : ''}</div>
                 <div class="player-balance">₹${player.balance}</div>
                 <div class="player-status">${player.status}</div>
                 <div class="player-cards">${cardsHTML}</div>`;
+                
             if (currentTurn === player.id) slot.classList.add('current-turn');
             ui.playersContainer.appendChild(slot);
         });
@@ -339,14 +349,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- UTILITY: CARDS & DECK ---
     function createDeck() { const s='♠♥♦♣',r='23456789TJQKA',d=[];for(const i of s)for(const j of r)d.push(j+i);return d.sort(()=>.5-Math.random())}
-    function getHandDetails(c){if(!c||c.length!==3)return{r:1,n:"Invalid",v:[]};const o='23456789TJQKA',p=c.map(e=>({r:o.indexOf(e[0]),s:e[1]})).sort((a,b)=>b.r-a.r),v=p.map(e=>e.r),s=p.map(e=>e.s),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{r:7,n:"Trail",v:d}:l&&u?{r:6,n:"Pure Seq",v:d}:u?{r:5,n:"Sequence",v:d}:l?{r:4,n:"Color",v:d}:i?{r:3,n:"Pair",v:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{r:2,n:"High Card",v:d}}
-    function compareHands(a,b){if(a.r!==b.r)return a.r-b.r;for(let e=0;e<a.v.length;e++)if(a.v[e]!==b.v[e])return a.v[e]-b.v[e];return 0}
+    function getHandDetails(c){if(!c||c.length!==3)return{rank:1,name:"Invalid",values:[]};const o='23456789TJQKA',p=c.map(e=>({rank:o.indexOf(e[0]),suit:e[1]})).sort((a,b)=>b.rank-a.r),v=p.map(e=>e.rank),s=p.map(e=>e.suit),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{rank:7,name:"Trail",values:d}:l&&u?{rank:6,name:"Pure Seq",values:d}:u?{rank:5,name:"Sequence",values:d}:l?{rank:4,name:"Color",values:d}:i?{rank:3,name:"Pair",values:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{rank:2,name:"High Card",values:d}}
+    function compareHands(a,b){if(a.rank!==b.rank)return a.rank-b.rank;for(let e=0;e<a.v.length;e++)if(a.v[e]!==b.v[e])return a.v[e]-b.v[e];return 0}
 
     // --- OTHER FEATURE LISTENERS ---
     ui.themeBtn.onclick = () => ui.themePopup.classList.toggle('active');
     document.querySelector('.theme-options').addEventListener('click', e => {
         if(e.target.matches('.theme-option')){
-            ui.tableArea.className = e.target.dataset.theme;
+            ui.tableArea.className = `theme-${e.target.dataset.theme}`;
             ui.themePopup.classList.remove('active');
         }
     });
