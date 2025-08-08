@@ -36,13 +36,10 @@ body { font-family: 'Segoe UI', sans-serif; background-color: var(--main-blue); 
 #game-message { font-size: 0.9em; min-height: 20px; }
 
 /* एक्शन बटन और चैट */
-#action-buttons { display: flex; justify-content: center; flex-wrap: wrap; }
+#action-buttons { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; padding: 5px; }
 #action-buttons button { padding: 8px 12px; font-size: 12px; }
-#chat-box { padding: 5px 10px; }
-#chat-messages { height: 60px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 5px; padding: 5px; font-size: 12px; text-align: left; margin-bottom: 5px; }
-#chat-input { width: 100%; padding: 8px; border: none; border-radius: 5px; }
 .bottom-controls { display: flex; padding: 5px 10px; justify-content: space-between; align-items: center; }
-#btn-voice-chat { background-color: var(--red); color: white; }
+#btn-voice-chat { background-color: var(--red); color: white; display: none; } /* Voice chat hidden by default */
 #btn-voice-chat.active { background-color: var(--green); }
 #admin-panel button { background-color: var(--red); color: white; padding: 8px 10px; font-size: 12px; }
 
