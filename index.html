@@ -49,11 +49,7 @@
         </div>
       </div>
 
-      <!-- चैट बॉक्स -->
-      <div id="chat-box">
-        <div id="chat-messages"></div>
-        <input type="text" id="chat-input" placeholder="Type a message...">
-      </div>
+      <!-- चैट बॉक्स (हटा दिया गया) -->
 
        <!-- नीचे के कंट्रोल -->
       <div class="bottom-controls">
@@ -74,7 +70,9 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
-  <!-- गेम लॉजिक -->
-  <script src="game.js"></script>
+  
+  <!-- गेम लॉजिक (defer attribute के साथ) -->
+  <script src="game.js" defer></script>
+
 </body>
 </html>
