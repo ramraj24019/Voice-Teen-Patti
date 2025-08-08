@@ -33,7 +33,6 @@ button:disabled { background-color: #555; color: #aaa; cursor: not-allowed; }
 #table-area { flex-grow: 1; min-height: 0; /* Important for flexbox */ position: relative; border-radius: 200px; margin: 10px; border: 5px solid #8B4513; transition: background 0.5s; }
 #action-buttons-container, .chat-container, .bottom-bar { flex-shrink: 0; }
 
-
 /* --- Top Bar --- */
 .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; background: rgba(0,0,0,0.3); }
 .top-buttons button { padding: 5px 8px; font-size: 12px; margin-right: 5px; }
@@ -64,8 +63,8 @@ button:disabled { background-color: #555; color: #aaa; cursor: not-allowed; }
 
 /* --- Cards --- */
 .player-cards { display: flex; justify-content: center; margin-top: 5px; perspective: 500px; }
-.card { position: relative; width: 25px; height: 38px; margin: 0 1px; transform-style: preserve-3d; transition: transform 0.6s; transform: rotateY(180deg); /* Start flipped */ }
-.card.seen, .card.showdown { transform: rotateY(0deg); /* Unflip when seen/showdown */ }
+.card { position: relative; width: 25px; height: 38px; margin: 0 1px; transform-style: preserve-3d; transition: transform 0.6s; transform: rotateY(180deg); /* Start flipped by default */ }
+.card.seen, .card.showdown { transform: rotateY(0deg); /* Unflip when player has seen or at showdown */ }
 .card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 3px; font-size: 12px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
 .card-front { background: white; color: black; }
 .card-back { background: var(--red); }
