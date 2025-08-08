@@ -11,8 +11,9 @@
     --font-family: 'Segoe UI', Arial, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: var(--font-family); background-color: var(--bg-dark); color: var(--text-light); overflow: hidden; }
-#game-container { max-width: 500px; height: 100vh; margin: auto; display: flex; flex-direction: column; background: var(--primary-blue); position: relative; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: var(--font-family); background-color: var(--bg-dark); color: var(--text-light); }
+#game-container { max-width: 500px; height: 100%; margin: auto; display: flex; flex-direction: column; background: var(--primary-blue); position: relative; }
 .screen { display: none; width: 100%; height: 100%; flex-direction: column; }
 .screen.active { display: flex; }
 button { cursor: pointer; border-radius: 5px; border: none; padding: 10px 15px; font-weight: bold; background-color: var(--secondary-blue); color: var(--text-light); transition: background-color 0.2s; }
@@ -25,13 +26,20 @@ button:disabled { background-color: #555; color: #aaa; cursor: not-allowed; }
 .login-box h1 { margin-bottom: 20px; }
 .login-box input { width: 100%; padding: 12px; border-radius: 5px; border: 1px solid var(--secondary-blue); font-size: 16px; margin-bottom: 15px; }
 
-/* --- Game Screen: Top Bar --- */
+/* --- Game Screen Layout Fix --- */
+#game-screen { display: none; } /* Default state corrected */
+#game-screen.active { display: flex; flex-direction: column; height: 100%; }
+.top-bar { flex-shrink: 0; }
+#table-area { flex-grow: 1; min-height: 0; /* Important for flexbox */ position: relative; border-radius: 200px; margin: 10px; border: 5px solid #8B4513; transition: background 0.5s; }
+#action-buttons-container, .chat-container, .bottom-bar { flex-shrink: 0; }
+
+
+/* --- Top Bar --- */
 .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; background: rgba(0,0,0,0.3); }
 .top-buttons button { padding: 5px 8px; font-size: 12px; margin-right: 5px; }
 #total-players-count { font-weight: bold; }
 
 /* --- Game Table Area --- */
-#table-area { flex-grow: 1; position: relative; border-radius: 200px; margin: 20px; border: 5px solid #8B4513; transition: background 0.5s; }
 #players-container { width: 100%; height: 100%; position: relative; }
 .table-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
 #pot-area { font-size: 1.5em; font-weight: bold; color: var(--gold); }
@@ -45,10 +53,10 @@ button:disabled { background-color: #555; color: #aaa; cursor: not-allowed; }
 
 /* --- Player Slots --- */
 .player-slot { position: absolute; width: 90px; text-align: center; transition: all 0.3s; }
-.player-slot[data-slot="0"] { top: 5%; left: 50%; transform: translateX(-50%); }
-.player-slot[data-slot="1"] { top: 50%; right: 5%; transform: translateY(-50%); }
-.player-slot[data-slot="2"] { bottom: 5%; left: 50%; transform: translateX(-50%); }
-.player-slot[data-slot="3"] { top: 50%; left: 5%; transform: translateY(-50%); }
+.player-slot[data-slot="0"] { top: 2%; left: 50%; transform: translateX(-50%); }
+.player-slot[data-slot="1"] { top: 50%; right: 2%; transform: translateY(-50%); }
+.player-slot[data-slot="2"] { bottom: 2%; left: 50%; transform: translateX(-50%); }
+.player-slot[data-slot="3"] { top: 50%; left: 2%; transform: translateY(-50%); }
 .player-avatar { width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--gold); margin: 0 auto 5px; background-size: cover; background-position: center; cursor: pointer; background-color: var(--primary-blue); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; }
 .player-slot.current-turn .player-avatar { box-shadow: 0 0 15px var(--green); transform: scale(1.1); }
 .player-name { font-weight: bold; font-size: 14px; }
@@ -56,19 +64,19 @@ button:disabled { background-color: #555; color: #aaa; cursor: not-allowed; }
 
 /* --- Cards --- */
 .player-cards { display: flex; justify-content: center; margin-top: 5px; perspective: 500px; }
-.card { position: relative; width: 25px; height: 38px; margin: 0 1px; transform-style: preserve-3d; transition: transform 0.6s; }
-.card.flipped { transform: rotateY(180deg); }
+.card { position: relative; width: 25px; height: 38px; margin: 0 1px; transform-style: preserve-3d; transition: transform 0.6s; transform: rotateY(180deg); /* Start flipped */ }
+.card.seen, .card.showdown { transform: rotateY(0deg); /* Unflip when seen/showdown */ }
 .card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 3px; font-size: 12px; display: flex; align-items: center; justify-content: center; font-weight: bold; }
 .card-front { background: white; color: black; }
-.card-back { background: var(--red); transform: rotateY(180deg); }
+.card-back { background: var(--red); }
 
 /* --- Action Buttons & Chat --- */
-#action-buttons-container { visibility: hidden; /* Hidden by default */ display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; padding: 5px; }
+#action-buttons-container { visibility: hidden; display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; padding: 5px; }
 .chat-container { padding: 5px 10px; }
-#chat-messages { height: 50px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 5px; padding: 5px; font-size: 12px; text-align: left; margin-bottom: 5px; }
+#chat-messages { height: 45px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 5px; padding: 5px; font-size: 12px; text-align: left; margin-bottom: 5px; }
 #chat-input { width: 100%; padding: 8px; border: none; border-radius: 5px; background: rgba(0,0,0,0.3); color: white; }
 .bottom-bar { display: flex; padding: 5px 10px; justify-content: space-between; align-items: center; }
-#btn-voice-toggle { padding: 8px 12px; font-size: 14px; } /* Corrected style */
+#btn-voice-toggle { padding: 8px 12px; font-size: 14px; }
 #btn-voice-toggle.active { background-color: var(--green); }
 #admin-panel { display: none; gap: 5px; }
 
