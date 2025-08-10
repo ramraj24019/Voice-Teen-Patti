@@ -344,30 +344,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     function startGame(s) {
-    // --- Purana game data clear ---
-    s.history = [];
-    s.winner = null;
-    s.currentTurn = null;
-    s.pot = 0;
-
-    // --- Sirf connected players ke saath continue karo ---
+    // Remove disconnected players
     for (let id in s.players) {
-        if (!s.players[id].connected) {
+        if (!s.players[id].connected) { 
             delete s.players[id];
         }
     }
 
-    s.status = "playing";
-    s.deck = createDeck();
-    s.message = "New round!";
+    // Minimum players check
+    if (Object.keys(s.players).length < 2) {
+        s.status = "waiting";
+        s.message = "Not enough players to start.";
+        return;
+    }
 
+    // Reset round-only values (history और voice text untouched)
+    s.status = "playing";
+    s.pot = 0;
+    s.deck = createDeck();
+    s.currentStake = BOOT_AMOUNT;
+    s.lastMove = null; // purani chal reset
+    s.currentTurn = null;
+    s.message = "New round started!";
+
+    // Deal cards & deduct boot
     Object.values(s.players).forEach(p => {
-        // Purana player data clear
         delete p.cards;
         delete p.status;
-        p.hasFolded = false;
+        p.lastAction = null;
 
-        // Balance check karke boot amount lagाओ
         if (p.balance >= BOOT_AMOUNT) {
             p.balance -= BOOT_AMOUNT;
             s.pot += BOOT_AMOUNT;
@@ -379,9 +384,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    s.currentStake = BOOT_AMOUNT;
-    s.currentTurn = Object.keys(s.players).find(p => s.players[p].status === "blind");
-    s.roundNumber = (s.roundNumber || 0) + 1;
+    // Set turn to first active player
+    s.currentTurn = Object.keys(s.players).find(pid => s.players[pid].status === "blind");
 }
     function moveToNextPlayer(s){const p=Object.keys(s.players).sort();let t=p.indexOf(s.currentTurn);if(-1===t)return;for(let o=0;o<p.length;o++){t=(t+1)%p.length;const a=p[t];if("packed"!==s.players[a]?.status&&"spectating"!==s.players[a]?.status)return void(s.currentTurn=a)}}
     function checkForWinner(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<=1){distributePot(p[0]?.id,s);return true}return false}
