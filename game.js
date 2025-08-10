@@ -83,21 +83,74 @@ document.addEventListener('DOMContentLoaded', () => {
         }).then(() => joinTable(newTableId));
     }
 
-    function joinTable(tableId) {
-        currentTableId = tableId;
-        currentTableRef = tablesRef.child(tableId);
-        const playerRef = currentTableRef.child('players').child(localPlayerId);
-        const newPlayer = { id: localPlayerId, name: localPlayerName, balance: 1000, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png' };
-        playerRef.set(newPlayer);
-        playerRef.child('cards').remove();   // Purane cards hatao
-        playerRef.child('status').remove();  // Purana status hatao
-        playerRef.child('hand').remove();    // Purana hand data hatao
-        playerRef.onDisconnect().remove();
-        showScreen('game');
-        currentTableRef.on('value', handleStateUpdate);
-        joinVoiceChannel();
-        listenForChat();
+ 
+  function joinTable(tableId) {
+  currentTableId = tableId;
+  currentTableRef = tablesRef.child(tableId);
+
+  // first get current table snapshot to see if table is empty/stale
+  currentTableRef.get().then(snapshot => {
+    const table = snapshot.val() || {};
+    const players = table.players || {};
+
+    // If table has no players (last player left earlier), reset important fields
+    if (!players || Object.keys(players).length === 0) {
+      currentTableRef.update({
+        status: 'waiting',
+        pot: 0,
+        message: 'Waiting...',
+        deck: null,
+        currentStake: null,
+        currentTurn: null
+      }).catch(err => console.warn('table reset warning:', err));
     }
+
+    // Now add this player to the table
+    const playerRef = currentTableRef.child('players').child(localPlayerId);
+    const newPlayer = {
+      id: localPlayerId,
+      name: localPlayerName,
+      balance: 1000,
+      status: 'online',
+      is_admin: isAdmin,
+      avatar: 'avatars/avatar1.png'
+    };
+
+    // set player, then ensure any leftover per-player keys are removed
+    playerRef.set(newPlayer).then(() => {
+      // defensive cleanup (in case stale keys remained)
+      playerRef.child('cards').remove().catch(()=>{});
+      playerRef.child('status').remove().catch(()=>{});
+      playerRef.child('hand').remove().catch(()=>{});
+
+      // remove this player on disconnect
+      playerRef.onDisconnect().remove();
+
+      // UI + listeners
+      showScreen('game');
+      currentTableRef.on('value', handleStateUpdate);
+      joinVoiceChannel();
+      listenForChat();
+    }).catch(err => {
+      console.error('Error adding player:', err);
+    });
+
+  }).catch(err => {
+    console.error('joinTable: failed to read table snapshot', err);
+    // fallback: try to add player anyway (original behaviour)
+    const playerRef = currentTableRef.child('players').child(localPlayerId);
+    const newPlayer = { id: localPlayerId, name: localPlayerName, balance: 1000, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png' };
+    playerRef.set(newPlayer);
+    playerRef.child('cards').remove().catch(()=>{});
+    playerRef.child('status').remove().catch(()=>{});
+    playerRef.child('hand').remove().catch(()=>{});
+    playerRef.onDisconnect().remove();
+    showScreen('game');
+    currentTableRef.on('value', handleStateUpdate);
+    joinVoiceChannel();
+    listenForChat();
+  });
+}
 
     function handleStateUpdate(snapshot) {
         if (!snapshot.exists() || !snapshot.val().players?.[localPlayerId]) {
@@ -290,8 +343,46 @@ document.addEventListener('DOMContentLoaded', () => {
             autoStartTimer = setTimeout(() => performAction(startGame), GAME_START_DELAY);
         }
     }
-    function startGame(s){s.status="playing",s.pot=0,s.deck=createDeck(),s.message="New round!",Object.values(s.players).forEach(p=>{delete p.cards;
-delete p.status;p.balance>=BOOT_AMOUNT?(p.balance-=BOOT_AMOUNT,s.pot+=BOOT_AMOUNT,p.cards=[s.deck.pop(),s.deck.pop(),s.deck.pop()],p.status="blind",p.hand=getHandDetails(p.cards)):p.status="spectating"}),s.currentStake=BOOT_AMOUNT,s.currentTurn=Object.keys(s.players).find(p=>"blind"===s.players[p].status)}
+    function startGame(s) {
+    // --- Purana game data clear ---
+    s.history = [];
+    s.winner = null;
+    s.currentTurn = null;
+    s.pot = 0;
+
+    // --- Sirf connected players ke saath continue karo ---
+    for (let id in s.players) {
+        if (!s.players[id].connected) {
+            delete s.players[id];
+        }
+    }
+
+    s.status = "playing";
+    s.deck = createDeck();
+    s.message = "New round!";
+
+    Object.values(s.players).forEach(p => {
+        // Purana player data clear
+        delete p.cards;
+        delete p.status;
+        p.hasFolded = false;
+
+        // Balance check karke boot amount lagाओ
+        if (p.balance >= BOOT_AMOUNT) {
+            p.balance -= BOOT_AMOUNT;
+            s.pot += BOOT_AMOUNT;
+            p.cards = [s.deck.pop(), s.deck.pop(), s.deck.pop()];
+            p.status = "blind";
+            p.hand = getHandDetails(p.cards);
+        } else {
+            p.status = "spectating";
+        }
+    });
+
+    s.currentStake = BOOT_AMOUNT;
+    s.currentTurn = Object.keys(s.players).find(p => s.players[p].status === "blind");
+    s.roundNumber = (s.roundNumber || 0) + 1;
+}
     function moveToNextPlayer(s){const p=Object.keys(s.players).sort();let t=p.indexOf(s.currentTurn);if(-1===t)return;for(let o=0;o<p.length;o++){t=(t+1)%p.length;const a=p[t];if("packed"!==s.players[a]?.status&&"spectating"!==s.players[a]?.status)return void(s.currentTurn=a)}}
     function checkForWinner(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<=1){distributePot(p[0]?.id,s);return true}return false}
     function endGame(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<1){s.status="showdown",s.message="No active players.";return}const t=p.reduce((s,p)=>compareHands(s.hand,p.hand)>=0?s:p);distributePot(t.id,s)}
@@ -300,4 +391,5 @@ delete p.status;p.balance>=BOOT_AMOUNT?(p.balance-=BOOT_AMOUNT,s.pot+=BOOT_AMOUN
     function getHandDetails(c){if(!c||c.length!==3)return{rank:1,name:"Invalid",values:[]};const o="23456789TJQKA",p=c.map(e=>({rank:o.indexOf(e[0]),suit:e[1]})).sort((a,b)=>b.rank-a.rank),v=p.map(e=>e.rank),s=p.map(e=>e.suit),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{rank:7,name:"Trail",values:d}:l&&u?{rank:6,name:"Pure Seq",values:d}:u?{rank:5,name:"Sequence",values:d}:l?{rank:4,name:"Color",values:d}:i?{rank:3,name:"Pair",values:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{rank:2,name:"High Card",values:d}}
     function compareHands(a,b){if(a.rank!==b.rank)return a.rank-b.rank;for(let e=0;e<a.values.length;e++)if(a.values[e]!==b.values[e])return a.values[e]-b.values[e];return 0}
 });
-                          
+
+            
