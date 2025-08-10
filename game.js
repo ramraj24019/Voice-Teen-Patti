@@ -1,112 +1,65 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // --- Pre-boot check ---
-    if (typeof firebase === 'undefined' || typeof AgoraRTC === 'undefined') {
-        alert("CRITICAL ERROR: A required library (Firebase or Agora) did not load. Please refresh.");
-        return;
-    }
+// This file handles all Agora Voice Chat logic.
 
-    // --- CONFIGURATION ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyBlbNZBZa6X7SNMWibj3-OsRJQar9jU-RY",
-      authDomain: "desi-teen-patti-c4639.firebaseapp.com",
-      databaseURL: "https://desi-teen-patti-c4639-default-rtdb.firebaseio.com",
-      projectId: "desi-teen-patti-c4639",
-      storageBucket: "desi-teen-patti-c4639.firebasestorage.app",
-      messagingSenderId: "1007516567686",
-      appId: "1:1007516567686:web:072f4172bda32d881de907"
-    };
-    
-    const AGORA_APP_ID = "369ab89e0e6e4e0c82612023fe7364b4";
-    const DB_ROOT_PATH = 'teenpatti-no-bot';
-    const MAX_PLAYERS_PER_TABLE = 4;
-    const GAME_START_DELAY = 5000;
-    const NEXT_ROUND_DELAY = 5000;
-    const BOOT_AMOUNT = 10;
-    const HAND_RANKS = { TRAIL: 7, PURE_SEQ: 6, SEQ: 5, COLOR: 4, PAIR: 3, HIGH_CARD: 2, INVALID: 1 };
-    
-    // --- INITIALIZATION ---
-    firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
-    const globalPlayersRef = database.ref(`${DB_ROOT_PATH}/globalPlayers`);
-    const tablesRef = database.ref(`${DB_ROOT_PATH}/tables`);
+const AGORA_APP_ID_VOICE = "f33cf29d42264f55b5130f61686e77a2"; // Your new, correct App ID
+const voiceToggleButton = document.getElementById('btn-voice-toggle');
 
-    // --- LOCAL STATE ---
-    let localPlayerId = null, localPlayerName = '', currentTableId = null, currentTableRef = null;
-    let currentGameState = {}, isAdmin = false, adminSeeAll = false, autoStartTimer = null;
+let agoraVoiceClient = null;
+let localAudioTrack = null;
+let isVoiceJoined = false;
+let currentVoiceChannel = null;
 
-    // --- UI ELEMENTS CACHE ---
-    const ui = {
-        loginScreen: document.getElementById('login-screen'),
-        gameScreen: document.getElementById('game-screen'),
-        playerNameInput: document.getElementById('player-name-input'),
-        joinGameBtn: document.getElementById('join-game-btn'),
-        totalPlayersCount: document.getElementById('total-players-count'),
-        tableArea: document.getElementById('table-area'),
-        playersContainer: document.getElementById('players-container'),
-        potArea: document.getElementById('pot-area'),
-        gameMessage: document.getElementById('game-message'),
-        actionButtonsContainer: document.getElementById('action-buttons-container'),
-        chatInput: document.getElementById('chat-input'),
-        chatMessages: document.getElementById('chat-messages'),
-        adminPanel: document.getElementById('admin-panel'),
-        themeBtn: document.getElementById('theme-btn'),
-        themePopup: document.getElementById('theme-popup'),
-        actionButtons: {
-            pack: document.getElementById('btn-pack'),
-            see: document.getElementById('btn-see'),
-            sideshow: document.getElementById('btn-sideshow'),
-            chaal: document.getElementById('btn-chaal'),
-            show: document.getElementById('btn-show')
-        },
-        adminButtons: {
-            seeAll: document.getElementById('btn-admin-see-all'),
-            changeCards: document.getElementById('btn-admin-change-cards')
-        }
-    };
-    
-    // --- CORE LOGIC: LOGIN AND TABLE MANAGEMENT ---
-    
-    ui.joinGameBtn.onclick = () => {
-        const name = ui.playerNameInput.value.trim();
-        if (!name) return;
-        localPlayerName = name;
-        localPlayerId = `player_${Date.now()}`;
-        isAdmin = name.toLowerCase() === 'vj';
-        
-        globalPlayersRef.child(localPlayerId).set({ name: localPlayerName }).then(() => {
-            globalPlayersRef.child(localPlayerId).onDisconnect().remove();
-            findAndJoinTable();
-        });
-    };
+async function joinVoiceChannel(channelName, localPlayerId) {
+    if (isVoiceJoined) return; // Already joined
 
-    function findAndJoinTable() {
-        tablesRef.get().then(snapshot => {
-            const allTables = snapshot.val() || {};
-            let joined = false;
-            for (const tableId in allTables) {
-                const table = allTables[tableId];
-                const playerCount = table.players ? Object.keys(table.players).length : 0;
-                if (playerCount < MAX_PLAYERS_PER_TABLE && (table.status === 'waiting' || table.status === 'showdown')) {
-                    joinTable(tableId);
-                    joined = true;
-                    break;
-                }
+    try {
+        currentVoiceChannel = channelName;
+        agoraVoiceClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+
+        agoraVoiceClient.on("user-published", async (user, mediaType) => {
+            await agoraVoiceClient.subscribe(user, mediaType);
+            if (mediaType === "audio") {
+                user.audioTrack.play();
             }
-            if (!joined) createTable();
         });
-    }
 
-    function createTable() {
-        const newTableId = `table_${Date.now()}`;
-        const newTableRef = tablesRef.child(newTableId);
-        const newPlayer = createPlayerObject();
-        const initialTableState = {
-            id: newTableId, status: 'waiting', players: { [localPlayerId]: newPlayer }, pot: 0,
-            message: 'Waiting for more players...'
-        };
-        newTableRef.set(initialTableState).then(() => joinTable(newTableId));
-    }
+        const uid = await agoraVoiceClient.join(AGORA_APP_ID_VOICE, channelName, null, localPlayerId);
+        
+        localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+        await agoraVoiceClient.publish([localAudioTrack]);
 
+        isVoiceJoined = true;
+        voiceToggleButton.textContent = "Voice OFF 🔇";
+        voiceToggleButton.classList.add('active');
+
+    } catch (error) {
+        console.error("Agora Join Error:", error);
+    }
+}
+
+async function leaveVoiceChannel() {
+    if (!isVoiceJoined) return;
+
+    try {
+        if (localAudioTrack) {
+            localAudioTrack.close();
+            localAudioTrack = null;
+        }
+        await agoraVoiceClient.leave();
+        isVoiceJoined = false;
+        voiceToggleButton.textContent = "Voice ON 🎤";
+        voiceToggleButton.classList.remove('active');
+    } catch (error) {
+        console.error("Agora Leave Error:", error);
+    }
+}
+
+voiceToggleButton.addEventListener('click', () => {
+    if (isVoiceJoined) {
+        leaveVoiceChannel();
+    } else if (currentVoiceChannel) { // Only join if we know the channel name
+        joinVoiceChannel(currentVoiceChannel, null); // We need the localPlayerId here, game.js will provide it
+    }
+});
     function joinTable(tableId) {
         currentTableId = tableId;
         currentTableRef = tablesRef.child(currentTableId);
