@@ -26,9 +26,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const database = firebase.database();
     const globalPlayersRef = database.ref(`${DB_ROOT_PATH}/globalPlayers`);
     const tablesRef = database.ref(`${DB_ROOT_PATH}/tables`);
+    const presenceRefRoot = database.ref(`${DB_ROOT_PATH}/presence`);
 
     // --- LOCAL STATE ---
-    let localPlayerId, localPlayerName, currentTableId, currentTableRef;
+    let localPlayerId, localPlayerName, localPlayerBalance = 1000, currentTableId, currentTableRef;
     let currentGameState = {}, isAdmin = false, adminSeeAll = false, autoStartTimer;
     let agoraVoiceClient, localAudioTrack, isVoiceJoined = false;
 
@@ -50,16 +51,42 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- CORE LOGIC: LOGIN AND TABLE ---
-    ui.joinGameBtn.onclick = () => {
-        const name = ui.playerNameInput.value.trim();
-        if (!name) return;
-        localPlayerName = name;
-        localPlayerId = `player_${Date.now()}`;
-        isAdmin = name.toLowerCase() === 'vj';
-        globalPlayersRef.child(localPlayerId).set({ name }).then(() => {
-            globalPlayersRef.child(localPlayerId).onDisconnect().remove();
+    // LOGIN by number (no OTP). Preserve balance for same number.
+    ui.joinGameBtn.onclick = async () => {
+        let input = ui.playerNameInput.value.trim();
+        if (!input) return;
+        // sanitize digits - allow letters too but prefer digits for id
+        const digits = input.replace(/\D/g, ''); 
+        const idSuffix = digits.length ? digits : input.replace(/\s+/g, '_');
+        localPlayerId = `player_${idSuffix}`;
+        localPlayerName = input;
+        isAdmin = localPlayerName.toLowerCase() === 'vj';
+
+        try {
+            const snap = await globalPlayersRef.child(localPlayerId).get();
+            if (snap.exists()) {
+                // existing player -> load stored balance and name if present
+                const data = snap.val();
+                localPlayerBalance = typeof data.balance === 'number' ? data.balance : 1000;
+                // prefer stored name only if it exists and the input is just digits
+                if (!/\D/.test(input) && data.name) localPlayerName = data.name;
+            } else {
+                // new player: create with default balance
+                localPlayerBalance = 1000;
+                await globalPlayersRef.child(localPlayerId).set({ name: localPlayerName, balance: localPlayerBalance });
+            }
+
+            // presence node so we don't remove permanent globalPlayers on disconnect
+            const presRef = presenceRefRoot.child(localPlayerId);
+            await presRef.set(true);
+            presRef.onDisconnect().remove();
+
+            // proceed to find/join table
             findAndJoinTable();
-        });
+        } catch (err) {
+            console.error('Login/fetch player failed:', err);
+            alert('Login error. Check console.');
+        }
     };
 
     function findAndJoinTable() {
@@ -72,85 +99,88 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             if (!joined) createTable();
+        }).catch(err => {
+            console.error('findAndJoinTable error:', err);
         });
     }
 
     function createTable() {
         const newTableId = `table_${Date.now()}`;
-        const newPlayer = { id: localPlayerId, name: localPlayerName, balance: 1000, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png' };
+        const newPlayer = { id: localPlayerId, name: localPlayerName, balance: localPlayerBalance, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png', connected:true };
         tablesRef.child(newTableId).set({
-            id: newTableId, status: 'waiting', players: { [localPlayerId]: newPlayer }, pot: 0, message: 'Waiting...'
-        }).then(() => joinTable(newTableId));
+            id: newTableId, status: 'waiting', players: { [localPlayerId]: newPlayer }, pot: 0, message: 'Waiting...', chat: {}
+        }).then(() => joinTable(newTableId)).catch(err => console.error('createTable error:', err));
     }
 
- 
-  function joinTable(tableId) {
-  currentTableId = tableId;
-  currentTableRef = tablesRef.child(tableId);
+    function joinTable(tableId) {
+      currentTableId = tableId;
+      currentTableRef = tablesRef.child(tableId);
 
-  // first get current table snapshot to see if table is empty/stale
-  currentTableRef.get().then(snapshot => {
-    const table = snapshot.val() || {};
-    const players = table.players || {};
+      // first get current table snapshot to see if table is empty/stale
+      currentTableRef.get().then(snapshot => {
+        const table = snapshot.val() || {};
+        const players = table.players || {};
 
-    // If table has no players (last player left earlier), reset important fields
-    if (!players || Object.keys(players).length === 0) {
-      currentTableRef.update({
-        status: 'waiting',
-        pot: 0,
-        message: 'Waiting...',
-        deck: null,
-        currentStake: null,
-        currentTurn: null
-      }).catch(err => console.warn('table reset warning:', err));
+        // If table has no players (last player left earlier), reset important fields
+        if (!players || Object.keys(players).length === 0) {
+          currentTableRef.update({
+            status: 'waiting',
+            pot: 0,
+            message: 'Waiting...',
+            deck: null,
+            currentStake: null,
+            currentTurn: null,
+            chat: {}
+          }).catch(err => console.warn('table reset warning:', err));
+        }
+
+        // Now add this player to the table
+        const playerRef = currentTableRef.child('players').child(localPlayerId);
+        const newPlayer = {
+          id: localPlayerId,
+          name: localPlayerName,
+          balance: localPlayerBalance,
+          status: 'online',
+          is_admin: isAdmin,
+          avatar: 'avatars/avatar1.png',
+          connected: true
+        };
+
+        // set player, then ensure any leftover per-player keys are removed
+        playerRef.set(newPlayer).then(() => {
+          // defensive cleanup (in case stale keys remained)
+          playerRef.child('cards').remove().catch(()=>{});
+          playerRef.child('status').remove().catch(()=>{});
+          playerRef.child('hand').remove().catch(()=>{});
+
+          // remove this player node from table on disconnect (table-level cleanup)
+          playerRef.onDisconnect().remove();
+
+          // UI + listeners
+          showScreen('game');
+          currentTableRef.on('value', handleStateUpdate);
+          joinVoiceChannel();
+          listenForChat();
+        }).catch(err => {
+          console.error('Error adding player:', err);
+        });
+
+      }).catch(err => {
+        console.error('joinTable: failed to read table snapshot', err);
+        // fallback: try to add player anyway (original behaviour)
+        const playerRef = currentTableRef.child('players').child(localPlayerId);
+        const newPlayer = { id: localPlayerId, name: localPlayerName, balance: localPlayerBalance, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png', connected:true };
+        playerRef.set(newPlayer);
+        playerRef.child('cards').remove().catch(()=>{});
+        playerRef.child('status').remove().catch(()=>{});
+        playerRef.child('hand').remove().catch(()=>{});
+        playerRef.onDisconnect().remove();
+        showScreen('game');
+        currentTableRef.on('value', handleStateUpdate);
+        joinVoiceChannel();
+        listenForChat();
+      });
     }
-
-    // Now add this player to the table
-    const playerRef = currentTableRef.child('players').child(localPlayerId);
-    const newPlayer = {
-      id: localPlayerId,
-      name: localPlayerName,
-      balance: 1000,
-      status: 'online',
-      is_admin: isAdmin,
-      avatar: 'avatars/avatar1.png'
-    };
-
-    // set player, then ensure any leftover per-player keys are removed
-    playerRef.set(newPlayer).then(() => {
-      // defensive cleanup (in case stale keys remained)
-      playerRef.child('cards').remove().catch(()=>{});
-      playerRef.child('status').remove().catch(()=>{});
-      playerRef.child('hand').remove().catch(()=>{});
-
-      // remove this player on disconnect
-      playerRef.onDisconnect().remove();
-
-      // UI + listeners
-      showScreen('game');
-      currentTableRef.on('value', handleStateUpdate);
-      joinVoiceChannel();
-      listenForChat();
-    }).catch(err => {
-      console.error('Error adding player:', err);
-    });
-
-  }).catch(err => {
-    console.error('joinTable: failed to read table snapshot', err);
-    // fallback: try to add player anyway (original behaviour)
-    const playerRef = currentTableRef.child('players').child(localPlayerId);
-    const newPlayer = { id: localPlayerId, name: localPlayerName, balance: 1000, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png' };
-    playerRef.set(newPlayer);
-    playerRef.child('cards').remove().catch(()=>{});
-    playerRef.child('status').remove().catch(()=>{});
-    playerRef.child('hand').remove().catch(()=>{});
-    playerRef.onDisconnect().remove();
-    showScreen('game');
-    currentTableRef.on('value', handleStateUpdate);
-    joinVoiceChannel();
-    listenForChat();
-  });
-}
 
     function handleStateUpdate(snapshot) {
         if (!snapshot.exists() || !snapshot.val().players?.[localPlayerId]) {
@@ -344,9 +374,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     function startGame(s) {
-    // Remove disconnected players
+    // --- Purana game data clear ---
+    s.history = s.history || []; // preserve if exists, but we are not resetting user-level history
+    s.winner = null;
+    s.currentTurn = null;
+    s.pot = 0;
+
+    // --- Sirf connected players ke saath continue karo ---
     for (let id in s.players) {
-        if (!s.players[id].connected) { 
+        if (s.players[id] && s.players[id].connected === false) {
             delete s.players[id];
         }
     }
@@ -358,21 +394,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Reset round-only values (history और voice text untouched)
     s.status = "playing";
-    s.pot = 0;
     s.deck = createDeck();
-    s.currentStake = BOOT_AMOUNT;
-    s.lastMove = null; // purani chal reset
-    s.currentTurn = null;
-    s.message = "New round started!";
+    s.message = "New round!";
 
-    // Deal cards & deduct boot
     Object.values(s.players).forEach(p => {
+        // Purana player data clear
         delete p.cards;
         delete p.status;
         p.lastAction = null;
+        p.hasFolded = false;
 
+        // Balance check karke boot amount lagाओ
         if (p.balance >= BOOT_AMOUNT) {
             p.balance -= BOOT_AMOUNT;
             s.pot += BOOT_AMOUNT;
@@ -384,16 +417,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Set turn to first active player
-    s.currentTurn = Object.keys(s.players).find(pid => s.players[pid].status === "blind");
+    s.currentStake = BOOT_AMOUNT;
+    s.currentTurn = Object.keys(s.players).find(p => s.players[p].status === "blind");
+    s.roundNumber = (s.roundNumber || 0) + 1;
 }
     function moveToNextPlayer(s){const p=Object.keys(s.players).sort();let t=p.indexOf(s.currentTurn);if(-1===t)return;for(let o=0;o<p.length;o++){t=(t+1)%p.length;const a=p[t];if("packed"!==s.players[a]?.status&&"spectating"!==s.players[a]?.status)return void(s.currentTurn=a)}}
     function checkForWinner(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<=1){distributePot(p[0]?.id,s);return true}return false}
     function endGame(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<1){s.status="showdown",s.message="No active players.";return}const t=p.reduce((s,p)=>compareHands(s.hand,p.hand)>=0?s:p);distributePot(t.id,s)}
-    function distributePot(s,p){if(s){const t=p.players[s];t.balance+=p.pot;p.message=`🎉 ${t.name} wins ₹${p.pot}!`}p.status="showdown"}
+    function distributePot(winnerId, tableState){
+        if (winnerId) {
+            const winner = tableState.players[winnerId];
+            if (winner) {
+                winner.balance += tableState.pot;
+                tableState.message = `🎉 ${winner.name} wins ₹${tableState.pot}!`;
+            }
+        }
+        tableState.status = "showdown";
+
+        // Persist ALL players' balances back to globalPlayers so login-by-number retains balance.
+        try {
+            Object.values(tableState.players).forEach(pl => {
+                if (pl && pl.id) {
+                    globalPlayersRef.child(pl.id).child('balance').set(pl.balance).catch(()=>{});
+                }
+            });
+        } catch (e) {
+            console.warn('persist balances error', e);
+        }
+    }
     function createDeck(){const s="♠♥♦♣",r="23456789TJQKA",d=[];for(const t of s)for(const o of r)d.push(o+t);return d.sort(()=>.5-Math.random())}
     function getHandDetails(c){if(!c||c.length!==3)return{rank:1,name:"Invalid",values:[]};const o="23456789TJQKA",p=c.map(e=>({rank:o.indexOf(e[0]),suit:e[1]})).sort((a,b)=>b.rank-a.rank),v=p.map(e=>e.rank),s=p.map(e=>e.suit),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{rank:7,name:"Trail",values:d}:l&&u?{rank:6,name:"Pure Seq",values:d}:u?{rank:5,name:"Sequence",values:d}:l?{rank:4,name:"Color",values:d}:i?{rank:3,name:"Pair",values:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{rank:2,name:"High Card",values:d}}
     function compareHands(a,b){if(a.rank!==b.rank)return a.rank-b.rank;for(let e=0;e<a.values.length;e++)if(a.values[e]!==b.values[e])return a.values[e]-b.values[e];return 0}
 });
-
-            
