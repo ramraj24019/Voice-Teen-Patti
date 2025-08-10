@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- Pre-boot check ---
-    if (typeof firebase === 'undefined') {
-        alert("CRITICAL ERROR: Firebase did not load.");
+    if (typeof firebase === 'undefined' || typeof AgoraRTC === 'undefined') {
+        alert("CRITICAL ERROR: A required library did not load. Please refresh.");
         return;
     }
 
@@ -15,12 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
       messagingSenderId: "1007516567686",
       appId: "1:1007516567686:web:072f4172bda32d881de907"
     };
+    const AGORA_APP_ID = "f33cf29d42264f55b5130f61686e77a2";
     const DB_ROOT_PATH = 'teenpatti-no-bot';
     const MAX_PLAYERS_PER_TABLE = 4;
     const GAME_START_DELAY = 5000;
-    const NEXT_ROUND_DELAY = 5000;
     const BOOT_AMOUNT = 10;
-    const HAND_RANKS = { TRAIL: 7, PURE_SEQ: 6, SEQ: 5, COLOR: 4, PAIR: 3, HIGH_CARD: 2 };
 
     // --- INITIALIZATION ---
     firebase.initializeApp(firebaseConfig);
@@ -31,8 +30,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- LOCAL STATE ---
     let localPlayerId, localPlayerName, currentTableId, currentTableRef;
     let currentGameState = {}, isAdmin = false, adminSeeAll = false, autoStartTimer;
+    let agoraVoiceClient, localAudioTrack, isVoiceJoined = false;
 
-    // --- UI ELEMENTS CACHE ---
+    // --- UI ELEMENTS ---
     const ui = {
         loginScreen: document.getElementById('login-screen'),
         gameScreen: document.getElementById('game-screen'),
@@ -42,11 +42,14 @@ document.addEventListener('DOMContentLoaded', () => {
         potArea: document.getElementById('pot-area'),
         gameMessage: document.getElementById('game-message'),
         adminPanel: document.getElementById('admin-panel'),
+        chatInput: document.getElementById('chat-input'),
+        chatMessages: document.getElementById('chat-messages'),
+        voiceToggleButton: document.getElementById('btn-voice-toggle'),
         actionButtonsContainer: document.getElementById('action-buttons-container'),
         actionButtons: { pack: document.getElementById('btn-pack'), see: document.getElementById('btn-see'), sideshow: document.getElementById('btn-sideshow'), chaal: document.getElementById('btn-chaal'), show: document.getElementById('btn-show') }
     };
 
-    // --- CORE LOGIC: LOGIN AND TABLE MANAGEMENT ---
+    // --- CORE LOGIC: LOGIN AND TABLE ---
     ui.joinGameBtn.onclick = () => {
         const name = ui.playerNameInput.value.trim();
         if (!name) return;
@@ -89,7 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
         playerRef.onDisconnect().remove();
         showScreen('game');
         currentTableRef.on('value', handleStateUpdate);
-        initializeVoice(tableId, localPlayerId);
+        joinVoiceChannel();
+        listenForChat();
     }
 
     function handleStateUpdate(snapshot) {
@@ -171,13 +175,77 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // --- VOICE CHAT FUNCTIONS ---
+    async function joinVoiceChannel() {
+        if (!currentTableId || isVoiceJoined) return;
+        try {
+            agoraVoiceClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+            agoraVoiceClient.on("user-published", async (user, mediaType) => {
+                await agoraVoiceClient.subscribe(user, mediaType);
+                if (mediaType === "audio") user.audioTrack.play();
+            });
+            await agoraVoiceClient.join(AGORA_APP_ID, currentTableId, null, localPlayerId);
+            localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+            await agoraVoiceClient.publish([localAudioTrack]);
+            isVoiceJoined = true;
+            ui.voiceToggleButton.textContent = "Voice OFF 🔇";
+            ui.voiceToggleButton.classList.add('active');
+        } catch (error) { console.error("Agora Join Error:", error); }
+    }
+
+    async function leaveVoiceChannel(isPermanent = false) {
+        if (!isVoiceJoined) return;
+        try {
+            if (localAudioTrack) { localAudioTrack.stop(); localAudioTrack.close(); localAudioTrack = null; }
+            if (agoraVoiceClient) await agoraVoiceClient.leave();
+        } catch (error) { console.error("Agora Leave Error:", error); }
+        finally {
+            isVoiceJoined = false;
+            ui.voiceToggleButton.textContent = "Voice ON 🎤";
+            ui.voiceToggleButton.classList.remove('active');
+            if (isPermanent) currentTableId = null;
+        }
+    }
+
+    ui.voiceToggleButton.addEventListener('click', () => {
+        if (isVoiceJoined) leaveVoiceChannel(false); 
+        else joinVoiceChannel();
+    });
+
+    // --- CHAT FUNCTIONS ---
+    ui.chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            const text = ui.chatInput.value.trim();
+            if (text && currentTableRef) {
+                currentTableRef.child('chat').push({
+                    sender: localPlayerName, text,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+                ui.chatInput.value = '';
+            }
+        }
+    });
+
+    function listenForChat() {
+        if (currentTableRef) {
+            const chatRef = currentTableRef.child('chat').limitToLast(15);
+            ui.chatMessages.innerHTML = ''; 
+            chatRef.on('child_added', snapshot => {
+                const msg = snapshot.val();
+                const msgDiv = document.createElement('div');
+                msgDiv.innerHTML = `<strong>${msg.sender}:</strong> ${msg.text}`;
+                ui.chatMessages.appendChild(msgDiv);
+                ui.chatMessages.scrollTop = ui.chatMessages.scrollHeight;
+            });
+        }
+    }
+
     // --- ACTION BUTTON LISTENERS ---
     function performAction(actionFunc) {
         const stateCopy = JSON.parse(JSON.stringify(currentGameState));
         actionFunc(stateCopy);
         currentTableRef.set(stateCopy);
     }
-
     ui.actionButtons.pack.onclick = () => performAction(state => {
         state.players[localPlayerId].status = 'packed';
         state.message = `${localPlayerName} packed.`;
@@ -222,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function startGame(s){s.status="playing",s.pot=0,s.deck=createDeck(),s.message="New round!",Object.values(s.players).forEach(p=>{p.balance>=BOOT_AMOUNT?(p.balance-=BOOT_AMOUNT,s.pot+=BOOT_AMOUNT,p.cards=[s.deck.pop(),s.deck.pop(),s.deck.pop()],p.status="blind",p.hand=getHandDetails(p.cards)):p.status="spectating"}),s.currentStake=BOOT_AMOUNT,s.currentTurn=Object.keys(s.players).find(p=>"blind"===s.players[p].status)}
     function moveToNextPlayer(s){const p=Object.keys(s.players).sort();let t=p.indexOf(s.currentTurn);if(-1===t)return;for(let o=0;o<p.length;o++){t=(t+1)%p.length;const a=p[t];if("packed"!==s.players[a]?.status&&"spectating"!==s.players[a]?.status)return void(s.currentTurn=a)}}
     function checkForWinner(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<=1){distributePot(p[0]?.id,s);return true}return false}
-    function endGame(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<1){s.status="showdown";s.message="No active players.";return}const t=p.reduce((s,p)=>compareHands(s.hand,p.hand)>=0?s:p);distributePot(t.id,s)}
+    function endGame(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<1){s.status="showdown",s.message="No active players.";return}const t=p.reduce((s,p)=>compareHands(s.hand,p.hand)>=0?s:p);distributePot(t.id,s)}
     function distributePot(s,p){if(s){const t=p.players[s];t.balance+=p.pot;p.message=`🎉 ${t.name} wins ₹${p.pot}!`}p.status="showdown"}
     function createDeck(){const s="♠♥♦♣",r="23456789TJQKA",d=[];for(const t of s)for(const o of r)d.push(o+t);return d.sort(()=>.5-Math.random())}
     function getHandDetails(c){if(!c||c.length!==3)return{rank:1,name:"Invalid",values:[]};const o="23456789TJQKA",p=c.map(e=>({rank:o.indexOf(e[0]),suit:e[1]})).sort((a,b)=>b.rank-a.rank),v=p.map(e=>e.rank),s=p.map(e=>e.suit),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{rank:7,name:"Trail",values:d}:l&&u?{rank:6,name:"Pure Seq",values:d}:u?{rank:5,name:"Sequence",values:d}:l?{rank:4,name:"Color",values:d}:i?{rank:3,name:"Pair",values:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{rank:2,name:"High Card",values:d}}
