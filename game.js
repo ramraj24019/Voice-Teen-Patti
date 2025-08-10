@@ -89,6 +89,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const playerRef = currentTableRef.child('players').child(localPlayerId);
         const newPlayer = { id: localPlayerId, name: localPlayerName, balance: 1000, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png' };
         playerRef.set(newPlayer);
+        playerRef.child('cards').remove();   // Purane cards hatao
+        playerRef.child('status').remove();  // Purana status hatao
+        playerRef.child('hand').remove();    // Purana hand data hatao
         playerRef.onDisconnect().remove();
         showScreen('game');
         currentTableRef.on('value', handleStateUpdate);
