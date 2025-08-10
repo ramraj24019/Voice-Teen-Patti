@@ -1,23 +1,54 @@
-// This is the main game logic controller.
 document.addEventListener('DOMContentLoaded', () => {
-    if (typeof firebase === 'undefined') return;
+    // --- Pre-boot check ---
+    if (typeof firebase === 'undefined') {
+        alert("CRITICAL ERROR: Firebase did not load.");
+        return;
+    }
 
-    const firebaseConfig = { /* ... आपकी Firebase कॉन्फ़िगरेशन ... */ };
+    // --- CONFIGURATION ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyBlbNZBZa6X7SNMWibj3-OsRJQar9jU-RY",
+      authDomain: "desi-teen-patti-c4639.firebaseapp.com",
+      databaseURL: "https://desi-teen-patti-c4639-default-rtdb.firebaseio.com",
+      projectId: "desi-teen-patti-c4639",
+      storageBucket: "desi-teen-patti-c4639.firebasestorage.app",
+      messagingSenderId: "1007516567686",
+      appId: "1:1007516567686:web:072f4172bda32d881de907"
+    };
+    const DB_ROOT_PATH = 'teenpatti-no-bot';
+    const MAX_PLAYERS_PER_TABLE = 4;
+    const GAME_START_DELAY = 5000;
+    const NEXT_ROUND_DELAY = 5000;
+    const BOOT_AMOUNT = 10;
+    const HAND_RANKS = { TRAIL: 7, PURE_SEQ: 6, SEQ: 5, COLOR: 4, PAIR: 3, HIGH_CARD: 2 };
+
+    // --- INITIALIZATION ---
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
-    
-    const DB_ROOT_PATH = 'teenpatti-no-bot';
     const globalPlayersRef = database.ref(`${DB_ROOT_PATH}/globalPlayers`);
     const tablesRef = database.ref(`${DB_ROOT_PATH}/tables`);
-    
+
+    // --- LOCAL STATE ---
     let localPlayerId, localPlayerName, currentTableId, currentTableRef;
     let currentGameState = {}, isAdmin = false, adminSeeAll = false, autoStartTimer;
 
-    const playerNameInput = document.getElementById('player-name-input');
-    const joinGameBtn = document.getElementById('join-game-btn');
-    
-    joinGameBtn.onclick = () => {
-        const name = playerNameInput.value.trim();
+    // --- UI ELEMENTS CACHE ---
+    const ui = {
+        loginScreen: document.getElementById('login-screen'),
+        gameScreen: document.getElementById('game-screen'),
+        playerNameInput: document.getElementById('player-name-input'),
+        joinGameBtn: document.getElementById('join-game-btn'),
+        playersContainer: document.getElementById('players-container'),
+        potArea: document.getElementById('pot-area'),
+        gameMessage: document.getElementById('game-message'),
+        adminPanel: document.getElementById('admin-panel'),
+        actionButtonsContainer: document.getElementById('action-buttons-container'),
+        actionButtons: { pack: document.getElementById('btn-pack'), see: document.getElementById('btn-see'), sideshow: document.getElementById('btn-sideshow'), chaal: document.getElementById('btn-chaal'), show: document.getElementById('btn-show') }
+    };
+
+    // --- CORE LOGIC: LOGIN AND TABLE MANAGEMENT ---
+    ui.joinGameBtn.onclick = () => {
+        const name = ui.playerNameInput.value.trim();
         if (!name) return;
         localPlayerName = name;
         localPlayerId = `player_${Date.now()}`;
@@ -33,8 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const allTables = snapshot.val() || {};
             let joined = false;
             for (const tableId in allTables) {
-                const table = allTables[tableId];
-                if ((table.players ? Object.keys(table.players).length : 0) < 4) {
+                if ((allTables[tableId].players ? Object.keys(allTables[tableId].players).length : 0) < MAX_PLAYERS_PER_TABLE) {
                     joinTable(tableId); joined = true; break;
                 }
             }
@@ -54,21 +84,20 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTableId = tableId;
         currentTableRef = tablesRef.child(tableId);
         const playerRef = currentTableRef.child('players').child(localPlayerId);
-        playerRef.set({ id: localPlayerId, name: localPlayerName, balance: 1000, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png' });
+        const newPlayer = { id: localPlayerId, name: localPlayerName, balance: 1000, status: 'online', is_admin: isAdmin, avatar: 'avatars/avatar1.png' };
+        playerRef.set(newPlayer);
         playerRef.onDisconnect().remove();
-        globalPlayersRef.child(localPlayerId).update({ tableId });
         showScreen('game');
         currentTableRef.on('value', handleStateUpdate);
         initializeVoice(tableId, localPlayerId);
-        initializeActions(performAction, () => currentGameState, () => localPlayerId);
     }
-    
+
     function handleStateUpdate(snapshot) {
         if (!snapshot.exists() || !snapshot.val().players?.[localPlayerId]) {
             goBackToLogin(); return;
         }
         currentGameState = snapshot.val();
-        renderGameUI(currentGameState, localPlayerId, adminSeeAll);
+        renderGameUI(currentGameState);
         handleAutoStart(currentGameState);
     }
 
@@ -78,29 +107,124 @@ document.addEventListener('DOMContentLoaded', () => {
         showScreen('login');
     }
 
-    function handleAutoStart(state) {
-        if(autoStartTimer) clearTimeout(autoStartTimer);
-        const hostId = Object.keys(state.players)[0];
-        if (localPlayerId !== hostId) return;
-        if ((state.status === 'waiting' || state.status === 'showdown') && Object.keys(state.players).length >= 2) {
-            autoStartTimer = setTimeout(() => performAction(startGame), 5000);
-        }
+    // --- UI FUNCTIONS ---
+    function showScreen(screenName) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(`${screenName}-screen`).classList.add('active');
     }
 
+    function renderGameUI(state) {
+        renderPlayers(state);
+        ui.potArea.textContent = `Pot: ₹${state.pot || 0}`;
+        ui.gameMessage.textContent = state.message || '...';
+        if (state.players[localPlayerId]) {
+            ui.adminPanel.style.display = state.players[localPlayerId].is_admin ? 'flex' : 'none';
+        }
+        updateActionButtons(state);
+    }
+
+    function renderPlayers(state) {
+        ui.playersContainer.innerHTML = '';
+        Object.values(state.players).forEach((player, index) => {
+            const slot = document.createElement('div');
+            slot.className = 'player-slot';
+            slot.dataset.slot = index;
+            const isMe = player.id === localPlayerId;
+            let cardsHTML = '';
+            if (player.cards) {
+                const isShowdown = state.status === 'showdown';
+                cardsHTML = player.cards.map(cardStr => {
+                    let cardClass = 'card';
+                    if ((isMe && player.status === 'seen') || adminSeeAll || (isShowdown && player.status !== 'packed')) {
+                        cardClass += ' seen';
+                    }
+                    return `<div class="${cardClass}"><div class="card-face card-back"></div><div class="card-face card-front">${cardStr}</div></div>`;
+                }).join('');
+            }
+            slot.innerHTML = `
+                <div class="player-avatar" style="background-image: url('${player.avatar || 'avatars/avatar1.png'}')"></div>
+                <div class="player-name">${player.name}${isMe ? ' (You)' : ''}</div>
+                <div class="player-balance">₹${player.balance}</div>
+                <div class="player-status">${player.status}</div>
+                <div class="player-cards">${cardsHTML}</div>`;
+            if (state.currentTurn === player.id) slot.classList.add('current-turn');
+            ui.playersContainer.appendChild(slot);
+        });
+    }
+
+    function updateActionButtons(state) {
+        const myPlayer = state.players[localPlayerId];
+        if (!myPlayer) return;
+        const isMyTurn = state.currentTurn === localPlayerId;
+        const canPlay = state.status === 'playing' && myPlayer.status !== 'packed' && myPlayer.status !== 'spectating';
+        ui.actionButtonsContainer.style.visibility = canPlay ? 'visible' : 'hidden';
+        if (!canPlay) return;
+
+        Object.values(ui.actionButtons).forEach(btn => btn.disabled = !isMyTurn);
+        if (isMyTurn) {
+            ui.actionButtons.see.disabled = myPlayer.status !== 'blind';
+            const activePlayersCount = Object.values(state.players).filter(p => p.status !== 'packed' && p.status !== 'spectating').length;
+            ui.actionButtons.show.disabled = (activePlayersCount > 2);
+            const stake = myPlayer.status === 'seen' ? (state.currentStake * 2) : state.currentStake;
+            ui.actionButtons.chaal.textContent = `Chaal (₹${stake})`;
+            ui.actionButtons.chaal.disabled = myPlayer.balance < stake;
+        }
+    }
+    
+    // --- ACTION BUTTON LISTENERS ---
     function performAction(actionFunc) {
         const stateCopy = JSON.parse(JSON.stringify(currentGameState));
         actionFunc(stateCopy);
         currentTableRef.set(stateCopy);
     }
-});
 
-// --- UTILITY FUNCTIONS (Can be accessed by other files as they are in global scope before DOMContentLoaded finishes)
-const BOOT_AMOUNT=10,HAND_RANKS={TRAIL:7,PURE_SEQ:6,SEQ:5,COLOR:4,PAIR:3,HIGH_CARD:2};
-function createDeck(){const s="♠♥♦♣",r="23456789TJQKA",d=[];for(const t of s)for(const o of r)d.push(o+t);return d.sort(()=>.5-Math.random())}
-function getHandDetails(c){if(!c||c.length!==3)return{rank:1,name:"Invalid",values:[]};const o="23456789TJQKA",p=c.map(e=>({rank:o.indexOf(e[0]),suit:e[1]})).sort((a,b)=>b.rank-a.rank),v=p.map(e=>e.rank),s=p.map(e=>e.suit),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{rank:7,name:"Trail",values:d}:l&&u?{rank:6,name:"Pure Seq",values:d}:u?{rank:5,name:"Sequence",values:d}:l?{rank:4,name:"Color",values:d}:i?{rank:3,name:"Pair",values:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{rank:2,name:"High Card",values:d}}
-function compareHands(a,b){if(a.rank!==b.rank)return a.rank-b.rank;for(let e=0;e<a.values.length;e++)if(a.values[e]!==b.values[e])return a.values[e]-b.values[e];return 0}
-function startGame(s){s.status="playing",s.pot=0,s.deck=createDeck(),s.message="New round!",Object.values(s.players).forEach(p=>{p.balance>=BOOT_AMOUNT?(p.balance-=BOOT_AMOUNT,s.pot+=BOOT_AMOUNT,p.cards=[s.deck.pop(),s.deck.pop(),s.deck.pop()],p.status="blind",p.hand=getHandDetails(p.cards)):p.status="spectating"}),s.currentStake=BOOT_AMOUNT,s.currentTurn=Object.keys(s.players).find(p=>"blind"===s.players[p].status)}
-function moveToNextPlayer(s){const p=Object.keys(s.players).sort();let t=p.indexOf(s.currentTurn);if(-1===t)return;for(let o=0;o<p.length;o++){t=(t+1)%p.length;const a=p[t];if("packed"!==s.players[a]?.status&&"spectating"!==s.players[a]?.status)return void(s.currentTurn=a)}}
-function checkForWinner(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);return p.length<=1?(distributePot(p[0]?.id,s),!0):!1}
-function endGame(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<1)return s.status="showdown",void(s.message="No active players.");const t=p.reduce((s,p)=>compareHands(s.hand,p.hand)>=0?s:p);distributePot(t.id,s)}
-function distributePot(s,p){if(s){const t=p.players[s];t.balance+=p.pot,p.message=`🎉 ${t.name} wins ₹${p.pot}!`}"showdown"===p.status}
+    ui.actionButtons.pack.onclick = () => performAction(state => {
+        state.players[localPlayerId].status = 'packed';
+        state.message = `${localPlayerName} packed.`;
+        if (!checkForWinner(state)) moveToNextPlayer(state);
+    });
+    ui.actionButtons.see.onclick = () => performAction(state => { state.players[localPlayerId].status = 'seen'; state.message = `${localPlayerName} has seen cards.`; });
+    ui.actionButtons.chaal.onclick = () => performAction(state => {
+        const myPlayer = state.players[localPlayerId];
+        const stake = myPlayer.status === 'seen' ? (currentGameState.currentStake * 2) : currentGameState.currentStake;
+        myPlayer.balance -= stake;
+        state.pot += stake;
+        state.currentStake = myPlayer.status === 'blind' ? stake : stake / 2;
+        state.message = `${localPlayerName} bets ₹${stake}.`;
+        moveToNextPlayer(state);
+    });
+    ui.actionButtons.show.onclick = () => performAction(endGame);
+    ui.actionButtons.sideshow.onclick = () => performAction(state => {
+        const playerIds = Object.keys(state.players).filter(pid => state.players[pid].status !== 'packed' && state.players[pid].status !== 'spectating');
+        const myIndex = playerIds.indexOf(localPlayerId);
+        const prevPlayerIndex = (myIndex - 1 + playerIds.length) % playerIds.length;
+        const opponent = state.players[playerIds[prevPlayerIndex]];
+        if (!opponent || state.players[localPlayerId].status !== 'seen' || opponent.status !== 'seen') {
+            state.message = "Side show not possible."; return;
+        }
+        const result = compareHands(state.players[localPlayerId].hand, opponent.hand);
+        const winner = result >= 0 ? state.players[localPlayerId] : opponent;
+        const loser = result >= 0 ? opponent : state.players[localPlayerId];
+        loser.status = 'packed';
+        state.message = `Side show: ${winner.name} wins vs ${loser.name}`;
+        if (!checkForWinner(state)) moveToNextPlayer(state);
+    });
+
+    // --- GAME LOGIC FUNCTIONS ---
+    function handleAutoStart(state) {
+        if(autoStartTimer) clearTimeout(autoStartTimer);
+        const hostId = Object.keys(state.players)[0];
+        if (localPlayerId !== hostId) return;
+        if ((state.status === 'waiting' || state.status === 'showdown') && Object.keys(state.players).length >= 2) {
+            autoStartTimer = setTimeout(() => performAction(startGame), GAME_START_DELAY);
+        }
+    }
+    function startGame(s){s.status="playing",s.pot=0,s.deck=createDeck(),s.message="New round!",Object.values(s.players).forEach(p=>{p.balance>=BOOT_AMOUNT?(p.balance-=BOOT_AMOUNT,s.pot+=BOOT_AMOUNT,p.cards=[s.deck.pop(),s.deck.pop(),s.deck.pop()],p.status="blind",p.hand=getHandDetails(p.cards)):p.status="spectating"}),s.currentStake=BOOT_AMOUNT,s.currentTurn=Object.keys(s.players).find(p=>"blind"===s.players[p].status)}
+    function moveToNextPlayer(s){const p=Object.keys(s.players).sort();let t=p.indexOf(s.currentTurn);if(-1===t)return;for(let o=0;o<p.length;o++){t=(t+1)%p.length;const a=p[t];if("packed"!==s.players[a]?.status&&"spectating"!==s.players[a]?.status)return void(s.currentTurn=a)}}
+    function checkForWinner(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<=1){distributePot(p[0]?.id,s);return true}return false}
+    function endGame(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<1){s.status="showdown";s.message="No active players.";return}const t=p.reduce((s,p)=>compareHands(s.hand,p.hand)>=0?s:p);distributePot(t.id,s)}
+    function distributePot(s,p){if(s){const t=p.players[s];t.balance+=p.pot;p.message=`🎉 ${t.name} wins ₹${p.pot}!`}p.status="showdown"}
+    function createDeck(){const s="♠♥♦♣",r="23456789TJQKA",d=[];for(const t of s)for(const o of r)d.push(o+t);return d.sort(()=>.p-Math.random())}
+    function getHandDetails(c){if(!c||c.length!==3)return{rank:1,name:"Invalid",values:[]};const o="23456789TJQKA",p=c.map(e=>({rank:o.indexOf(e[0]),suit:e[1]})).sort((a,b)=>b.rank-a.rank),v=p.map(e=>e.rank),s=p.map(e=>e.suit),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{rank:7,name:"Trail",values:d}:l&&u?{rank:6,name:"Pure Seq",values:d}:u?{rank:5,name:"Sequence",values:d}:l?{rank:4,name:"Color",values:d}:i?{rank:3,name:"Pair",values:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{rank:2,name:"High Card",values:d}}
+    function compareHands(a,b){if(a.rank!==b.rank)return a.rank-b.rank;for(let e=0;e<a.values.length;e++)if(a.values[e]!==b.values[e])return a.values[e]-b.values[e];return 0}
+});
