@@ -20,7 +20,9 @@ function renderGameUI(state, localPlayerId, adminSeeAll) {
     renderPlayers(state, localPlayerId, adminSeeAll);
     ui.potArea.textContent = `Pot: ₹${state.pot || 0}`;
     ui.gameMessage.textContent = state.message || '...';
-    ui.adminPanel.style.display = state.players[localPlayerId].is_admin ? 'flex' : 'none';
+    if (state.players[localPlayerId]) {
+        ui.adminPanel.style.display = state.players[localPlayerId].is_admin ? 'flex' : 'none';
+    }
     updateActionButtons(state, localPlayerId);
 }
 
@@ -43,7 +45,7 @@ function renderPlayers(state, localPlayerId, adminSeeAll) {
             }).join('');
         }
         slot.innerHTML = `
-            <div class="player-avatar" style="background-image: url('${player.avatar}')"></div>
+            <div class="player-avatar" style="background-image: url('${player.avatar || 'avatars/avatar1.png'}')"></div>
             <div class="player-name">${player.name}${isMe ? ' (You)' : ''}</div>
             <div class="player-balance">₹${player.balance}</div>
             <div class="player-status">${player.status}</div>
@@ -55,6 +57,8 @@ function renderPlayers(state, localPlayerId, adminSeeAll) {
 
 function updateActionButtons(state, localPlayerId) {
     const myPlayer = state.players[localPlayerId];
+    if (!myPlayer) return;
+
     const isMyTurn = state.currentTurn === localPlayerId;
     const canPlay = state.status === 'playing' && myPlayer.status !== 'packed' && myPlayer.status !== 'spectating';
     ui.actionButtonsContainer.style.visibility = canPlay ? 'visible' : 'hidden';
@@ -70,58 +74,4 @@ function updateActionButtons(state, localPlayerId) {
         ui.actionButtons.chaal.textContent = `Chaal (₹${stake})`;
         ui.actionButtons.chaal.disabled = myPlayer.balance < stake;
     }
-}```
-
----
-
-#### **फाइल 6: `actions.js` (नई फाइल)**
-
-```javascript
-// This file handles all game action button logic.
-function initializeActions(performAction, getGameState, getLocalPlayerId) {
-    const actionButtons = {
-        pack: document.getElementById('btn-pack'),
-        see: document.getElementById('btn-see'),
-        sideshow: document.getElementById('btn-sideshow'),
-        chaal: document.getElementById('btn-chaal'),
-        show: document.getElementById('btn-show')
-    };
-
-    actionButtons.pack.onclick = () => performAction(state => {
-        state.players[getLocalPlayerId()].status = 'packed';
-        state.message = `${state.players[getLocalPlayerId()].name} packed.`;
-        if (!checkForWinner(state)) moveToNextPlayer(state);
-    });
-
-    actionButtons.see.onclick = () => performAction(state => {
-        state.players[getLocalPlayerId()].status = 'seen';
-        state.message = `${state.players[getLocalPlayerId()].name} has seen their cards.`;
-    });
-    
-    actionButtons.chaal.onclick = () => performAction(state => {
-        const myPlayer = state.players[getLocalPlayerId()];
-        const stake = myPlayer.status === 'seen' ? (state.currentStake * 2) : state.currentStake;
-        myPlayer.balance -= stake;
-        state.pot += stake;
-        state.currentStake = myPlayer.status === 'blind' ? stake : stake / 2;
-        state.message = `${myPlayer.name} bets ₹${stake}.`;
-        moveToNextPlayer(state);
-    });
-
-    actionButtons.show.onclick = () => performAction(endGame);
-    
-    actionButtons.sideshow.onclick = () => performAction(state => {
-        const myPlayer = state.players[getLocalPlayerId()];
-        const playerIds = Object.keys(state.players).filter(pid => state.players[pid].status !== 'packed' && state.players[pid].status !== 'spectating');
-        const myIndex = playerIds.indexOf(getLocalPlayerId());
-        const prevPlayerIndex = (myIndex - 1 + playerIds.length) % playerIds.length;
-        const opponent = state.players[playerIds[prevPlayerIndex]];
-        
-        // Add more checks for sideshow validity if needed
-        const result = compareHands(myPlayer.hand, opponent.hand);
-        const loser = result >= 0 ? opponent : myPlayer;
-        loser.status = 'packed';
-        state.message = `Side show: ${myPlayer.name} won against ${opponent.name}`;
-        if (!checkForWinner(state)) moveToNextPlayer(state);
-    });
 }
