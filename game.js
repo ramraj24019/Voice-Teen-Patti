@@ -52,29 +52,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- CORE LOGIC: LOGIN AND TABLE ---
     // LOGIN by number (no OTP). Preserve balance for same number.
-    ui.joinGameBtn.onclick = async () => {
-        let input = ui.playerNameInput.value.trim();
-        if (!input) return;
-        // sanitize digits - allow letters too but prefer digits for id
-        const digits = input.replace(/\D/g, ''); 
-        const idSuffix = digits.length ? digits : input.replace(/\s+/g, '_');
-        localPlayerId = `player_${idSuffix}`;
-        localPlayerName = input;
-        isAdmin = localPlayerName.toLowerCase() === 'vj';
+    ui.joinGameBtn.onclick = () => {
+    const name = ui.playerNameInput.value.trim();
+    if (!name) return;
+    localPlayerName = name;
+    isAdmin = name.toLowerCase() === 'vj';
 
-        try {
-            const snap = await globalPlayersRef.child(localPlayerId).get();
-            if (snap.exists()) {
-                // existing player -> load stored balance and name if present
-                const data = snap.val();
-                localPlayerBalance = typeof data.balance === 'number' ? data.balance : 1000;
-                // prefer stored name only if it exists and the input is just digits
-                if (!/\D/.test(input) && data.name) localPlayerName = data.name;
-            } else {
-                // new player: create with default balance
-                localPlayerBalance = 1000;
-                await globalPlayersRef.child(localPlayerId).set({ name: localPlayerName, balance: localPlayerBalance });
-            }
+    firebase.auth().signInAnonymously()
+        .then(() => {
+            localPlayerId = firebase.auth().currentUser.uid;
+            globalPlayersRef.child(localPlayerId).set({ name, balance: 1000 })
+                .then(() => {
+                    globalPlayersRef.child(localPlayerId).onDisconnect().remove();
+                    findAndJoinTable();
+                });
+        })
+        .catch(error => {
+            console.error("Login Error:", error);
+            alert("Login failed: " + error.message);
+        });
+};
 
             // presence node so we don't remove permanent globalPlayers on disconnect
             const presRef = presenceRefRoot.child(localPlayerId);
@@ -434,4 +431,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tableState.status = "showdown";
 
- 
+        // Persist ALL players' balances back to globalPlayers so login-by-number retains balance.
+        try {
+            Object.values(tableState.players).forEach(pl => {
+                if (pl && pl.id) {
+                    globalPlayersRef.child(pl.id).child('balance').set(pl.balance).catch(()=>{});
+                }
+            });
+        } catch (e) {
+            console.warn('persist balances error', e);
+        }
+    }
+    function createDeck(){const s="♠♥♦♣",r="23456789TJQKA",d=[];for(const t of s)for(const o of r)d.push(o+t);return d.sort(()=>.5-Math.random())}
+    function getHandDetails(c){if(!c||c.length!==3)return{rank:1,name:"Invalid",values:[]};const o="23456789TJQKA",p=c.map(e=>({rank:o.indexOf(e[0]),suit:e[1]})).sort((a,b)=>b.rank-a.rank),v=p.map(e=>e.rank),s=p.map(e=>e.suit),l=s[0]===s[1]&&s[1]===s[2],t=v.includes(12)&&v.includes(1)&&v.includes(0),q=v[0]-1===v[1]&&v[1]-1===v[2],u=q||t,n=v[0]===v[1]&&v[1]===v[2];let a=-1;v[0]===v[1]||v[1]===v[2]?a=v[1]:v[0]===v[2]&&(a=v[0]);const i=a!==-1,d=t?[12,1,0].sort((e,r)=>r-e):v;return n?{rank:7,name:"Trail",values:d}:l&&u?{rank:6,name:"Pure Seq",values:d}:u?{rank:5,name:"Sequence",values:d}:l?{rank:4,name:"Color",values:d}:i?{rank:3,name:"Pair",values:function(e,r){const t=e.find(t=>t!==r);return[r,r,t]}(v,a)}:{rank:2,name:"High Card",values:d}}
+    function compareHands(a,b){if(a.rank!==b.rank)return a.rank-b.rank;for(let e=0;e<a.values.length;e++)if(a.values[e]!==b.values[e])return a.values[e]-b.values[e];return 0}
+});
