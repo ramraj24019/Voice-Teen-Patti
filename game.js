@@ -290,7 +290,8 @@ document.addEventListener('DOMContentLoaded', () => {
             autoStartTimer = setTimeout(() => performAction(startGame), GAME_START_DELAY);
         }
     }
-    function startGame(s){s.status="playing",s.pot=0,s.deck=createDeck(),s.message="New round!",Object.values(s.players).forEach(p=>{p.balance>=BOOT_AMOUNT?(p.balance-=BOOT_AMOUNT,s.pot+=BOOT_AMOUNT,p.cards=[s.deck.pop(),s.deck.pop(),s.deck.pop()],p.status="blind",p.hand=getHandDetails(p.cards)):p.status="spectating"}),s.currentStake=BOOT_AMOUNT,s.currentTurn=Object.keys(s.players).find(p=>"blind"===s.players[p].status)}
+    function startGame(s){s.status="playing",s.pot=0,s.deck=createDeck(),s.message="New round!",Object.values(s.players).forEach(p=>{delete p.cards;
+delete p.status;p.balance>=BOOT_AMOUNT?(p.balance-=BOOT_AMOUNT,s.pot+=BOOT_AMOUNT,p.cards=[s.deck.pop(),s.deck.pop(),s.deck.pop()],p.status="blind",p.hand=getHandDetails(p.cards)):p.status="spectating"}),s.currentStake=BOOT_AMOUNT,s.currentTurn=Object.keys(s.players).find(p=>"blind"===s.players[p].status)}
     function moveToNextPlayer(s){const p=Object.keys(s.players).sort();let t=p.indexOf(s.currentTurn);if(-1===t)return;for(let o=0;o<p.length;o++){t=(t+1)%p.length;const a=p[t];if("packed"!==s.players[a]?.status&&"spectating"!==s.players[a]?.status)return void(s.currentTurn=a)}}
     function checkForWinner(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<=1){distributePot(p[0]?.id,s);return true}return false}
     function endGame(s){const p=Object.values(s.players).filter(p=>"packed"!==p.status&&"spectating"!==p.status);if(p.length<1){s.status="showdown",s.message="No active players.";return}const t=p.reduce((s,p)=>compareHands(s.hand,p.hand)>=0?s:p);distributePot(t.id,s)}
