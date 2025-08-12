@@ -7,9 +7,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
     <div id="game-container">
-        <!-- Screen: Login -->
         <div id="login-screen" class="screen active">
             <div class="login-box">
                 <h1>Teen Patti Pro</h1>
@@ -17,18 +15,13 @@
                 <button id="join-game-btn">Enter Game</button>
             </div>
         </div>
-
-        <!-- Screen: Main Game Table -->
         <div id="game-screen" class="screen">
             <div class="top-bar">
                 <div class="top-buttons">
                     <button id="shop-btn">Shop 🛍️</button>
-                    <button id="theme-btn">Theme 🎨</button>
-                    <button id="lucky-draw-btn">Spin 🎁</button>
                 </div>
                 <div id="total-players-count">Online: 0</div>
             </div>
-
             <div id="table-area" class="theme-default">
                 <div id="players-container"></div>
                 <div class="table-center">
@@ -36,7 +29,6 @@
                     <div id="game-message">Waiting for players...</div>
                 </div>
             </div>
-
             <div id="action-buttons-container">
                 <button id="btn-pack">Pack</button>
                 <button id="btn-see">See</button>
@@ -44,23 +36,19 @@
                 <button id="btn-chaal">Chaal</button>
                 <button id="btn-show">Show</button>
             </div>
-            
             <div class="chat-container">
                 <div id="chat-messages"></div>
                 <input type="text" id="chat-input" placeholder="Type a message...">
             </div>
-
-             <div class="bottom-bar">
+            <div class="bottom-bar">
                 <button id="btn-voice-toggle">Voice ON 🎤</button>
                 <div id="admin-panel">
                     <button id="btn-admin-see-all">See All</button>
                     <button id="btn-admin-change-cards">Change</button>
                 </div>
-             </div>
+            </div>
         </div>
     </div>
-
-    <!-- Shop Popup -->
     <div id="shop-popup" class="popup">
         <h3>Credit Shop</h3>
         <div class="shop-packages">
@@ -71,23 +59,16 @@
         <div id="payment-instructions" style="display:none;">
             <h4>Payment Steps:</h4>
             <p>1. Pay using the UPI link below.</p>
-            <p>2. **Important:** Your credit will be updated by the admin after payment confirmation.</p>
-            <p id="upi-payment-link-container">Payment Link: <a id="upi-payment-link" href="#" target="_blank">Generate Link</a></p>
-            <p>Your Login ID (for reference): <strong id="player-login-id"></strong></p>
+            <p>2. **Important:** Your credit will be updated by admin after payment confirmation.</p>
+            <p>Payment Link: <a id="upi-payment-link" href="#" target="_blank">Generate Link</a></p>
+            <p>Your Login ID: <strong id="player-login-id"></strong></p>
         </div>
         <button id="close-shop-btn">Close</button>
     </div>
-    
-    <!-- Other Popups will be added here -->
-
-    <!-- Libraries -->
     <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-database-compat.js"></script>
     <script src="https://cdn.agora.io/sdk/release/AgoraRTC_N.js"></script>
-
-    <!-- Main Game Logic -->
     <script src="voice.js" defer></script> 
     <script src="game.js" defer></script>
-
 </body>
 </html>
